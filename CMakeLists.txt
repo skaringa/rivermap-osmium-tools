@@ -22,7 +22,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo;MinSizeRel;Dev"
     "List of available configuration types"
     FORCE)
 
-project(osm-gis-export)
+project(rivermap-osmium-tools)
 
 set(OSM_GIS_EXPORT_VERSION_MAJOR 0)
 set(OSM_GIS_EXPORT_VERSION_MINOR 0)
@@ -31,7 +31,7 @@ set(OSM_GIS_EXPORT_VERSION_PATCH 1)
 set(OSM_GIS_EXPORT_VERSION
     ${OSM_GIS_EXPORT_VERSION_MAJOR}.${OSM_GIS_EXPORT_VERSION_MINOR}.${OSM_GIS_EXPORT_VERSION_PATCH})
 
-set(AUTHOR "Jochen Topf <jochen@topf.org>")
+set(AUTHOR "Martin Kompf <skaringa@nospam.org>")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -78,50 +78,6 @@ if(CPPCHECK)
 else()
     message(STATUS "Looking for cppcheck - not found")
     message(STATUS "  Build target 'cppcheck' will not be available")
-endif()
-
-
-#-----------------------------------------------------------------------------
-#
-#  Optional "clang-tidy" target
-#
-#-----------------------------------------------------------------------------
-message(STATUS "Looking for clang-tidy")
-find_program(CLANG_TIDY NAMES clang-tidy clang-tidy-12 clang-tidy-11 clang-tidy-10 clang-tidy-9 clang-tidy-8)
-
-if(CLANG_TIDY)
-    message(STATUS "Looking for clang-tidy - found ${CLANG_TIDY}")
-
-    add_custom_target(clang-tidy
-        ${CLANG_TIDY}
-        -p ${CMAKE_BINARY_DIR}
-        osm_gis_export_overview.cpp
-        osmium_toogr.cpp
-        osmium_rivermap.cpp
-        osmium_toogr2.cpp
-        osmium_toogr2_exp.cpp
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src"
-    )
-else()
-    message(STATUS "Looking for clang-tidy - not found")
-    message(STATUS "  Build target 'clang-tidy' will not be available.")
-endif()
-
-
-#-----------------------------------------------------------------------------
-#
-#  Optional "iwyu" target to check headers
-#  https://include-what-you-use.org/
-#
-#-----------------------------------------------------------------------------
-find_program(IWYU_TOOL iwyu_tool.py)
-
-if(IWYU_TOOL)
-    message(STATUS "Looking for iwyu_tool.py - found")
-    add_custom_target(iwyu ${IWYU_TOOL} -p ${CMAKE_BINARY_DIR})
-else()
-    message(STATUS "Looking for iwyu_tool.py - not found")
-    message(STATUS "  Make target 'iwyu' will not be available")
 endif()
 
 
