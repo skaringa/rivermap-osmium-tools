@@ -133,6 +133,7 @@ int main(int argc, char* argv[]) {
     // Set up a filter.
         osmium::TagsFilter filter{false};
         filter.add_rule(true, "natural", "water");
+        filter.add_rule(true, "natural", "coastline");
         filter.add_rule(true, "landuse", "reservoir");
         filter.add_rule(true, "landuse", "basin");
         filter.add_rule(true, "waterway", "stream");
