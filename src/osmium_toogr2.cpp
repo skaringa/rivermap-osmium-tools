@@ -152,10 +152,10 @@ int main(int argc, char* argv[]) {
         // Choose one of the following:
 
         // 1. Use WGS84, do not project coordinates.
-        //osmium::geom::OGRFactory<> factory {};
+        osmium::geom::OGRFactory<> factory {};
 
         // 2. Project coordinates into "Web Mercator".
-        osmium::geom::OGRFactory<osmium::geom::MercatorProjection> factory;
+        //osmium::geom::OGRFactory<osmium::geom::MercatorProjection> factory;
 
         // 3. Use any projection that the proj library can handle.
         //    (Initialize projection with EPSG code or proj string).
