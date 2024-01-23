@@ -145,6 +145,7 @@ int main(int argc, char* argv[]) {
         filter.add_rule(true, "waterway", "dam");
         filter.add_rule(true, "waterway", "waterfall");
         filter.add_rule(true, "waterway", "fish_pass");
+        filter.add_rule(true, "waterway", "rock_ramp");
 
         // Configuration for the multipolygon assembler. We disable the option to
         // create empty areas when invalid multipolygons are encountered. This
