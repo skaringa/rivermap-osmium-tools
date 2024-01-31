@@ -34,6 +34,10 @@ using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
 // For osmium::apply()
 #include <osmium/visitor.hpp>
 
+// For reading and parsing of tags filter
+#include <osmium/index/nwr_array.hpp>
+#include "util.hpp"
+
 class WaterHandler : public osmium::handler::Handler {
 
     static void output_waterway(const osmium::Way& way, const char* tag_key, std::ofstream & out) {
@@ -76,8 +80,8 @@ class WaterHandler : public osmium::handler::Handler {
 
 public:
 
-    WaterHandler(const char* wayfile, const char* areafile, const osmium::TagsFilter & filter)
-        : m_filter(filter)
+    WaterHandler(const char* wayfile, const char* areafile)
+        : m_filter(false)
     {
       waystream.open(wayfile);
       areastream.open(areafile);
@@ -112,17 +116,48 @@ public:
         }
     }
 
+    void parse_and_add_expression(const std::string& expression) {
+        const auto p = get_filter_expression(expression);
+        std::cout << "adding filter rule " << p.second << std::endl;
+        m_filter.add_rule(true, get_tag_matcher(p.second));
+    }
+
+    void read_expressions_file(const std::string& file_name) {
+        // Reading filter expressions file
+
+        std::ifstream file{file_name};
+        if (!file.is_open()) {
+            throw std::runtime_error{"Could not open file '" + file_name + "'"};
+        }
+
+        for (std::string line; std::getline(file, line);) {
+            const auto pos = line.find_first_of('#');
+            if (pos != std::string::npos) {
+                line.erase(pos);
+            }
+            if (!line.empty()) {
+                if (line.back() == '\r') {
+                    line.resize(line.size() - 1);
+                }
+                parse_and_add_expression(line);
+            }
+        }
+    }
+
+    const osmium::TagsFilter & getTagsFilter() {
+        return m_filter;
+    }
 
 private:
     std::ofstream waystream;
     std::ofstream areastream;
-    const osmium::TagsFilter & m_filter;
+    osmium::TagsFilter m_filter;
 
 }; // class WaterHandler
 
 int main(int argc, char* argv[]) {
-    if (argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " osmfile.pbf wways.csv wtr.csv\n";
+    if (argc != 5) {
+        std::cerr << "Usage: " << argv[0] << " osmfile.pbf tags-filter.txt wways.csv wtr.csv\n";
         std::exit(1);
     }
 
@@ -130,22 +165,9 @@ int main(int argc, char* argv[]) {
         // The input file
         const osmium::io::File input_file{argv[1]};
 
-    // Set up a filter.
-        osmium::TagsFilter filter{false};
-        filter.add_rule(true, "natural", "water");
-        filter.add_rule(true, "natural", "coastline");
-        filter.add_rule(true, "landuse", "reservoir");
-        filter.add_rule(true, "landuse", "basin");
-        filter.add_rule(true, "waterway", "stream");
-        filter.add_rule(true, "waterway", "river");
-        filter.add_rule(true, "waterway", "ditch");
-        filter.add_rule(true, "waterway", "canal");
-        filter.add_rule(true, "waterway", "drain");
-        filter.add_rule(true, "waterway", "weir");
-        filter.add_rule(true, "waterway", "dam");
-        filter.add_rule(true, "waterway", "waterfall");
-        filter.add_rule(true, "waterway", "fish_pass");
-        filter.add_rule(true, "waterway", "rock_ramp");
+        // Create our waterway handler.
+        WaterHandler data_handler(argv[3]/*wayfile*/, argv[4]/*areafile*/);
+        data_handler.read_expressions_file(argv[2]/*tags-filter-file*/);
 
         // Configuration for the multipolygon assembler. We disable the option to
         // create empty areas when invalid multipolygons are encountered. This
@@ -158,7 +180,7 @@ int main(int argc, char* argv[]) {
         // relations and member ways needed for each area. It then calls an
         // instance of the osmium::area::Assembler class (with the given config)
         // to actually assemble one area.
-        osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config, filter};
+        osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config, data_handler.getTagsFilter()};
 
         // We read the input file twice. In the first pass, only relations are
         // read and fed into the multipolygon manager.
@@ -177,9 +199,6 @@ int main(int argc, char* argv[]) {
         // not be needed (if it is not part of a multipolygon relation), so why
         // create an error?
         location_handler.ignore_errors();
-
-        // Create our handler.
-        WaterHandler data_handler(argv[2], argv[3], filter);
 
         // On the second pass we read all objects and run them first through the
         // node location handler and then the multipolygon manager. The manager
