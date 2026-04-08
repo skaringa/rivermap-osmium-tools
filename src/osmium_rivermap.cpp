@@ -90,22 +90,25 @@ public:
 
 };
 
-class MyOGRHandler : public osmium::handler::Handler {
+class Pass2OGRHandler : public osmium::handler::Handler {
 
     gdalcpp::Layer m_layer_linestring;
     RiversystemMap& m_rsystems;
+    std::map<int32_t, int32_t> & m_memberOf;
 
     osmium::geom::OGRFactory<> m_factory;
 
 public:
-    explicit MyOGRHandler(gdalcpp::Dataset& dataset, RiversystemMap& rsystems) :
+    explicit Pass2OGRHandler(gdalcpp::Dataset& dataset, RiversystemMap& rsystems, std::map<int32_t, int32_t> & memberOf) :
         m_layer_linestring(dataset, "waterway", wkbLineString),
-        m_rsystems(rsystems) {
+        m_rsystems(rsystems),
+        m_memberOf(memberOf) {
 
-        m_layer_linestring.add_field("id", OFTReal, 10);
+        m_layer_linestring.add_field("id", OFTInteger64, 10);
         m_layer_linestring.add_field("name", OFTString, 30);
         m_layer_linestring.add_field("type", OFTString, 30);
         m_layer_linestring.add_field("rsystem", OFTString, 30);
+        m_layer_linestring.add_field("memberOf", OFTInteger64, 10);
     }
 
     void way(const osmium::Way& way) {
@@ -114,20 +117,51 @@ public:
             try {
                 const char* name = way.tags().get_value_by_key("name");
                 gdalcpp::Feature feature{m_layer_linestring, m_factory.create_linestring(way)};
-                feature.set_field("id", static_cast<double>(way.id()));
+                feature.set_field("id", static_cast<GIntBig>(way.id()));
                 if (name) {
                     feature.set_field("name", name);
                 }
                 feature.set_field("type", waterway);
                 const char* riversystem = m_rsystems.getName(way.id());
                 feature.set_field("rsystem", riversystem);
+                auto it = m_memberOf.find(way.id());
+                if (it != m_memberOf.end()) {
+                    feature.set_field("memberOf", static_cast<GIntBig>(it->second));
+                }
                 feature.add_to_layer();
             } catch (const osmium::geometry_error&) {
                 std::cerr << "Ignoring illegal geometry for way " << way.id() << ".\n";
             }
         }
     }
+};
 
+class Pass1OGRHandler : public osmium::handler::Handler {
+
+    std::map<int32_t, int32_t> & m_memberOf;
+
+public:
+    explicit Pass1OGRHandler(std::map<int32_t, int32_t> & memberOf) :
+        m_memberOf(memberOf)
+    {}
+
+    void relation(const osmium::Relation& relation) {
+        const char* type = relation.tags().get_value_by_key("type");
+        if (type != nullptr && 0 == strcmp("waterway", type)) {
+            try {
+                int32_t id = static_cast<int32_t>(relation.id());
+                for (const auto& member : relation.members()) {
+                    if (osmium::item_type::way == member.type()) {
+                        m_memberOf[member.ref()] = id;
+                    }
+                }
+                //const char* name = relation.tags().get_value_by_key("name");
+                //std::cout << "Found " << relation.members().size() << " members for waterway " << (name==nullptr? "" : name) << ".\n";
+            } catch (const osmium::geometry_error&) {
+                std::cerr << "Ignoring illegal geometry for relation " << relation.id() << ".\n";
+            }
+        }
+    }
 };
 
 /* ================================================== */
@@ -208,7 +242,7 @@ int main(int argc, char* argv[]) {
             input_filename = "-";
         }
 
-        osmium::io::Reader reader{input_filename};
+        osmium::io::Reader reader1{input_filename};
 
         std::unique_ptr<index_type> index = map_factory.create_map(location_store);
         location_handler_type location_handler{*index};
@@ -217,14 +251,24 @@ int main(int argc, char* argv[]) {
         CPLSetConfigOption("OGR_SQLITE_SYNCHRONOUS", "OFF");
         gdalcpp::Dataset dataset{output_format, output_filename, gdalcpp::SRS{}, { "SPATIALITE=TRUE", "INIT_WITH_EPSG=no" }};
 
+        std::cerr << "Pass 1...\n";
+        std::map<int32_t, int32_t> memberOf;
+        Pass1OGRHandler ogr_handler1{memberOf};
+        osmium::apply(reader1, location_handler, ogr_handler1);
+        reader1.close();
+        std::cerr << "Pass 1 done\n";
+
+        std::cerr << "Pass 2...\n";
+        osmium::io::Reader reader2{input_filename};
         RiversystemMap rsystems;
         if (! rsystems_file.empty()) {
             rsystems.load(rsystems_file);
         }
-        MyOGRHandler ogr_handler{dataset, rsystems};
+        Pass2OGRHandler ogr_handler2{dataset, rsystems, memberOf};
 
-        osmium::apply(reader, location_handler, ogr_handler);
-        reader.close();
+        osmium::apply(reader2, location_handler, ogr_handler2);
+        reader2.close();
+        std::cerr << "Pass 2 done\n";
 
         /*
         const int locations_fd = ::open("locations.dump", O_WRONLY | O_CREAT, 0644);
