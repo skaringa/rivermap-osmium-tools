@@ -94,12 +94,12 @@ class Pass2OGRHandler : public osmium::handler::Handler {
 
     gdalcpp::Layer m_layer_linestring;
     RiversystemMap& m_rsystems;
-    std::map<int32_t, int32_t> & m_memberOf;
+    std::map<int64_t, int64_t> & m_memberOf;
 
     osmium::geom::OGRFactory<> m_factory;
 
 public:
-    explicit Pass2OGRHandler(gdalcpp::Dataset& dataset, RiversystemMap& rsystems, std::map<int32_t, int32_t> & memberOf) :
+    explicit Pass2OGRHandler(gdalcpp::Dataset& dataset, RiversystemMap& rsystems, std::map<int64_t, int64_t> & memberOf) :
         m_layer_linestring(dataset, "waterway", wkbLineString),
         m_rsystems(rsystems),
         m_memberOf(memberOf) {
@@ -117,7 +117,7 @@ public:
             try {
                 const char* name = way.tags().get_value_by_key("name");
                 gdalcpp::Feature feature{m_layer_linestring, m_factory.create_linestring(way)};
-                feature.set_field("id", static_cast<GIntBig>(way.id()));
+                feature.set_field("id", static_cast<GInt64>(way.id()));
                 if (name) {
                     feature.set_field("name", name);
                 }
@@ -126,7 +126,7 @@ public:
                 feature.set_field("rsystem", riversystem);
                 auto it = m_memberOf.find(way.id());
                 if (it != m_memberOf.end()) {
-                    feature.set_field("memberOf", static_cast<GIntBig>(it->second));
+                    feature.set_field("memberOf", static_cast<GInt64>(it->second));
                 }
                 feature.add_to_layer();
             } catch (const osmium::geometry_error&) {
@@ -138,10 +138,10 @@ public:
 
 class Pass1OGRHandler : public osmium::handler::Handler {
 
-    std::map<int32_t, int32_t> & m_memberOf;
+    std::map<int64_t, int64_t> & m_memberOf;
 
 public:
-    explicit Pass1OGRHandler(std::map<int32_t, int32_t> & memberOf) :
+    explicit Pass1OGRHandler(std::map<int64_t, int64_t> & memberOf) :
         m_memberOf(memberOf)
     {}
 
@@ -149,10 +149,9 @@ public:
         const char* type = relation.tags().get_value_by_key("type");
         if (type != nullptr && 0 == strcmp("waterway", type)) {
             try {
-                int32_t id = static_cast<int32_t>(relation.id());
                 for (const auto& member : relation.members()) {
                     if (osmium::item_type::way == member.type()) {
-                        m_memberOf[member.ref()] = id;
+                        m_memberOf[member.ref()] = relation.id();
                     }
                 }
                 //const char* name = relation.tags().get_value_by_key("name");
@@ -252,7 +251,7 @@ int main(int argc, char* argv[]) {
         gdalcpp::Dataset dataset{output_format, output_filename, gdalcpp::SRS{}, { "SPATIALITE=TRUE", "INIT_WITH_EPSG=no" }};
 
         std::cerr << "Pass 1...\n";
-        std::map<int32_t, int32_t> memberOf;
+        std::map<int64_t, int64_t> memberOf;
         Pass1OGRHandler ogr_handler1{memberOf};
         osmium::apply(reader1, location_handler, ogr_handler1);
         reader1.close();
