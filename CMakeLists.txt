@@ -6,8 +6,17 @@
 #
 #-----------------------------------------------------------------------------
 
-cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.10)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
+#-----------------------------------------------------------------------------
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 #-----------------------------------------------------------------------------
@@ -22,18 +31,9 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo;MinSizeRel;Dev"
     "List of available configuration types"
     FORCE)
 
-project(rivermap-osmium-tools)
-
-set(OSM_GIS_EXPORT_VERSION_MAJOR 0)
-set(OSM_GIS_EXPORT_VERSION_MINOR 0)
-set(OSM_GIS_EXPORT_VERSION_PATCH 1)
-
-set(OSM_GIS_EXPORT_VERSION
-    ${OSM_GIS_EXPORT_VERSION_MAJOR}.${OSM_GIS_EXPORT_VERSION_MINOR}.${OSM_GIS_EXPORT_VERSION_PATCH})
+project(rivermap-osmium-tools VERSION 0.0.1 LANGUAGES CXX C)
 
 set(AUTHOR "Martin Kompf <skaringa@nospam.org>")
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 #-----------------------------------------------------------------------------
@@ -42,10 +42,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #
 #-----------------------------------------------------------------------------
 
-find_package(Boost 1.55.0 REQUIRED COMPONENTS program_options)
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
-
-find_package(Osmium 2.13.1 REQUIRED COMPONENTS io ogr proj)
+find_package(Osmium 2.13.1 REQUIRED COMPONENTS io ogr)
 include_directories(SYSTEM ${OSMIUM_INCLUDE_DIRS})
 
 if(MSVC)
@@ -74,7 +71,7 @@ if(CPPCHECK)
     # cpp doesn't find system includes for some reason, suppress that report
     set(CPPCHECK_OPTIONS ${CPPCHECK_OPTIONS} --suppress=missingIncludeSystem)
 
-    add_custom_target(cppcheck ${CPPCHECK} --std=c++11 ${CPPCHECK_OPTIONS} ${CMAKE_SOURCE_DIR}/src/*pp)
+    add_custom_target(cppcheck ${CPPCHECK} --std=c++17 ${CPPCHECK_OPTIONS} ${CMAKE_SOURCE_DIR}/src/*pp)
 else()
     message(STATUS "Looking for cppcheck - not found")
     message(STATUS "  Build target 'cppcheck' will not be available")
@@ -83,18 +80,44 @@ endif()
 
 #-----------------------------------------------------------------------------
 #
-#  Decide which C++ version to use (Minimum/default: C++11).
+#  Optional "clang-tidy" target
 #
 #-----------------------------------------------------------------------------
-if(NOT MSVC)
-    if(NOT USE_CPP_VERSION)
-        set(USE_CPP_VERSION c++11)
-    endif()
-    message(STATUS "Use C++ version: ${USE_CPP_VERSION}")
-    # following only available from cmake 2.8.12:
-    #   add_compile_options(-std=${USE_CPP_VERSION})
-    # so using this instead:
-    add_definitions(-std=${USE_CPP_VERSION})
+message(STATUS "Looking for clang-tidy")
+find_program(CLANG_TIDY NAMES clang-tidy clang-tidy-22 clang-tidy-21 clang-tidy-20 clang-tidy-19 clang-tidy-18 clang-tidy-17 clang-tidy-16 clang-tidy-15)
+
+if(CLANG_TIDY)
+    message(STATUS "Looking for clang-tidy - found ${CLANG_TIDY}")
+
+    add_custom_target(clang-tidy
+        ${CLANG_TIDY}
+        -p ${CMAKE_BINARY_DIR}
+        osm_gis_export_overview.cpp
+        osmium_toogr.cpp
+        osmium_toogr2.cpp
+        osmium_toogr2_exp.cpp
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src"
+    )
+else()
+    message(STATUS "Looking for clang-tidy - not found")
+    message(STATUS "  Build target 'clang-tidy' will not be available.")
+endif()
+
+
+#-----------------------------------------------------------------------------
+#
+#  Optional "iwyu" target to check headers
+#  https://include-what-you-use.org/
+#
+#-----------------------------------------------------------------------------
+find_program(IWYU_TOOL iwyu_tool.py)
+
+if(IWYU_TOOL)
+    message(STATUS "Looking for iwyu_tool.py - found")
+    add_custom_target(iwyu ${IWYU_TOOL} -p ${CMAKE_BINARY_DIR})
+else()
+    message(STATUS "Looking for iwyu_tool.py - not found")
+    message(STATUS "  Make target 'iwyu' will not be available")
 endif()
 
 
@@ -145,6 +168,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Dev")
         add_definitions(-Werror -fno-omit-frame-pointer)
     endif()
     add_definitions(${OSMIUM_WARNING_OPTIONS})
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_definitions(-Wno-stringop-overread)
 endif()
 
 # Force RelWithDebInfo build type if none was given

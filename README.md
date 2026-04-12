@@ -7,8 +7,7 @@ Based on [libosmium](https://osmcode.org/libosmium/)
 
 ## Requires
 
-You need a C++11 compliant compiler. GCC 4.8 and later as well as clang 3.4 and
-later are known to work. You also need the following libraries:
+You need a C++17 compliant compiler. You also need the following libraries:
 
     Osmium Library
         Need at least version 2.13.1
@@ -45,10 +44,6 @@ later are known to work. You also need the following libraries:
         https://www.zlib.net/
         Debian/Ubuntu: zlib1g-dev
         openSUSE: zlib-devel
-
-    PROJ
-        https://proj.org/
-        Debian/Ubuntu: libproj-dev
 
 ## Installing dependencies
 
