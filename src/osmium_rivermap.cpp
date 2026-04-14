@@ -46,7 +46,7 @@ class RiversystemMap {
 
 private:
     std::set<std::string> m_names;
-    std::map<long, const char *> m_id2Name;
+    std::map<int64_t, const char *> m_id2Name;
     std::string m_empty;
 
     void insert(long id, std::string name) {
@@ -70,7 +70,7 @@ public:
             throw std::runtime_error(std::string("Wrong csv header: ") + header);
         }
 
-        long id;
+        int64_t id;
         std::string name;
         while (! ifs.eof()) {
             ifs >> id >> comma >> name;
@@ -80,16 +80,21 @@ public:
         ifs.close();
     }
 
-    const char * getName(long id) const {
-        auto it = m_id2Name.find(id);
-        if (it == m_id2Name.end()) {
+    const char * getName(int64_t id) const {
+        if (auto it = m_id2Name.find(id); it != m_id2Name.end()) {
+            return it->second;
+        } else {
             return m_empty.c_str();
         }
-        return it->second;
     }
 
 };
 
+/**
+ * Handler for pass 2 to process a way with tag 'waterway'.
+ * It collects id, name, type, rsystem, and membersOf of the way 
+ * and stores them into a Spatialite database.
+ */
 class Pass2OGRHandler : public osmium::handler::Handler {
 
     gdalcpp::Layer m_layer_linestring;
@@ -124,8 +129,7 @@ public:
                 feature.set_field("type", waterway);
                 const char* riversystem = m_rsystems.getName(way.id());
                 feature.set_field("rsystem", riversystem);
-                auto it = m_memberOf.find(way.id());
-                if (it != m_memberOf.end()) {
+                if (auto it = m_memberOf.find(way.id()); it != m_memberOf.end()) {
                     feature.set_field("memberOf", static_cast<GInt64>(it->second));
                 }
                 feature.add_to_layer();
@@ -136,6 +140,10 @@ public:
     }
 };
 
+/**
+ * Handler for pass 1 to process all relations with type=waterway.
+ * Stores the mapping of waterway Id to relation Id in the map memberOf.
+ */
 class Pass1OGRHandler : public osmium::handler::Handler {
 
     std::map<int64_t, int64_t> & m_memberOf;
@@ -248,6 +256,7 @@ int main(int argc, char* argv[]) {
         location_handler.ignore_errors();
 
         CPLSetConfigOption("OGR_SQLITE_SYNCHRONOUS", "OFF");
+        CPLSetConfigOption("OGR_SQLITE_CACHE", "1024MB");
         gdalcpp::Dataset dataset{output_format, output_filename, gdalcpp::SRS{}, { "SPATIALITE=TRUE", "INIT_WITH_EPSG=no" }};
 
         std::cerr << "Pass 1...\n";
@@ -257,26 +266,21 @@ int main(int argc, char* argv[]) {
         reader1.close();
         std::cerr << "Pass 1 done\n";
 
-        std::cerr << "Pass 2...\n";
+        std::cerr << "Loading " << input_filename << "...\n";
         osmium::io::Reader reader2{input_filename};
         RiversystemMap rsystems;
         if (! rsystems_file.empty()) {
             rsystems.load(rsystems_file);
         }
-        Pass2OGRHandler ogr_handler2{dataset, rsystems, memberOf};
+        std::cerr << "Loading done.\n";
 
+        std::cerr << "Pass 2...\n";
+        Pass2OGRHandler ogr_handler2{dataset, rsystems, memberOf};
+        dataset.start_transaction();
         osmium::apply(reader2, location_handler, ogr_handler2);
+        dataset.commit_transaction();
         reader2.close();
         std::cerr << "Pass 2 done\n";
-
-        /*
-        const int locations_fd = ::open("locations.dump", O_WRONLY | O_CREAT, 0644);
-        if (locations_fd < 0) {
-            throw std::system_error{errno, std::system_category(), "Open failed"};
-        }
-        index->dump_as_list(locations_fd);
-        ::close(locations_fd);
-        */
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << '\n';
         return 1;
