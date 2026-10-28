@@ -40,48 +40,40 @@ using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
 
 class WaterHandler : public osmium::handler::Handler {
 
-    static void output_waterway(const osmium::Way& way, const char* tag_key, std::ofstream & out) {
-        const osmium::TagList& tags = way.tags();
-        const char* tag_value = tags.get_value_by_key(tag_key);
-        if (nullptr != tag_value) {
-            // Print id of the waterway and the tagname of the pub if it is set.
-            out << way.id() << "," << tag_value;
-
-            // Print ids of nodes of the ways
-            for (const osmium::NodeRef& nr : way.nodes()) {
-              out << "," << nr.ref();
-            }
-
-            out << std::endl;
+    static void output_waterway(const osmium::Way& way, std::ofstream & out) {
+        // Print id of the waterway
+        out << way.id();
+    
+        // Print ids of nodes of the ways
+        for (const osmium::NodeRef& nr : way.nodes()) {
+            out << "," << nr.ref();
         }
+
+        out << std::endl;
     }
 
-    static void output_area(const osmium::Area& area, const char* tag_key, std::ofstream & out) {
-        const osmium::TagList& tags = area.tags();
-        const char* tag_value = tags.get_value_by_key(tag_key);
-        if (nullptr != tag_value) {
-            // Print id of the waterway and the tagname of the pub if it is set.
-            out << area.orig_id() << "," << tag_value;
+    static void output_area(const osmium::Area& area, std::ofstream & out) {
+        // Print id of the area
+        out << area.orig_id();
 
-            // Because we set
-            // create_empty_areas = false in the assembler config, we can
-            // be sure there will always be at least one outer ring.
+        // Because we set
+        // create_empty_areas = false in the assembler config, we can
+        // be sure there will always be at least one outer ring.
 
-            // Print ids of nodes of the outer rings
-            for (auto& ring : area.outer_rings()) {
-                for (const osmium::NodeRef& nr : ring) {
-                  out << "," << nr.ref();
-                }
+        // Print ids of nodes of the outer rings
+        for (auto& ring : area.outer_rings()) {
+            for (const osmium::NodeRef& nr : ring) {
+                out << "," << nr.ref();
             }
-
-            out << std::endl;
         }
+
+        out << std::endl;
     }
 
 public:
 
     WaterHandler(const char* wayfile, const char* areafile)
-        : m_filter(false)
+        : m_tags_filter(false), m_way_filter(false), m_area_filter(false)
     {
       waystream.open(wayfile);
       areastream.open(areafile);
@@ -94,32 +86,34 @@ public:
 
     void way(const osmium::Way& way) {
         const osmium::TagList& tags = way.tags();
-        if (osmium::tags::match_any_of(tags, m_filter)) {
-            if (tags.has_key("waterway")) {
-              output_waterway(way, "waterway", waystream);
-            } else if (tags.has_key("natural")) {
-              output_waterway(way, "natural", areastream);
-            } else if (tags.has_key("landuse")) {
-              output_waterway(way, "landuse", areastream);
+        if (osmium::tags::match_any_of(tags, m_way_filter)) {
+            if (tags.has_key("natural") && 0 == strcmp("coastline", tags.get_value_by_key("natural"))) {
+              // special deal: put coastline into area stream to avoid collisions at 1st pass
+              output_waterway(way, areastream);
+            } else {
+              output_waterway(way, waystream);
             }
         }
     }
 
     void area(const osmium::Area& area) {
         const osmium::TagList& tags = area.tags();
-        if (osmium::tags::match_any_of(tags, m_filter)) {
-            if (tags.has_key("natural")) {
-              output_area(area, "natural", areastream);
-            } else if (tags.has_key("landuse")) {
-              output_area(area, "landuse", areastream);
-            }
+        if (osmium::tags::match_any_of(tags, m_area_filter)) {
+            output_area(area, areastream);
         }
     }
 
     void parse_and_add_expression(const std::string& expression) {
         const auto p = get_filter_expression(expression);
-        std::cout << "adding filter rule " << p.second << std::endl;
-        m_filter.add_rule(true, get_tag_matcher(p.second));
+        if (p.first == osmium::osm_entity_bits::way) {
+            std::cout << "adding way filter rule " << p.second << std::endl;
+            m_way_filter.add_rule(true, get_tag_matcher(p.second));
+            m_tags_filter.add_rule(true, get_tag_matcher(p.second));
+        } else if (p.first == osmium::osm_entity_bits::area) {
+            std::cout << "adding area filter rule " << p.second << std::endl;
+            m_area_filter.add_rule(true, get_tag_matcher(p.second));
+            m_tags_filter.add_rule(true, get_tag_matcher(p.second));
+        }
     }
 
     void read_expressions_file(const std::string& file_name) {
@@ -145,13 +139,15 @@ public:
     }
 
     const osmium::TagsFilter & getTagsFilter() {
-        return m_filter;
+        return m_tags_filter;
     }
 
 private:
     std::ofstream waystream;
     std::ofstream areastream;
-    osmium::TagsFilter m_filter;
+    osmium::TagsFilter m_tags_filter;
+    osmium::TagsFilter m_way_filter;
+    osmium::TagsFilter m_area_filter;
 
 }; // class WaterHandler
 
