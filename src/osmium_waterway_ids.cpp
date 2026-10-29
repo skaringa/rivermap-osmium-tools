@@ -73,7 +73,7 @@ class WaterHandler : public osmium::handler::Handler {
 public:
 
     WaterHandler(const char* wayfile, const char* areafile)
-        : m_tags_filter(false), m_way_filter(false), m_area_filter(false)
+        : m_way_filter(false), m_area_filter(false)
     {
       waystream.open(wayfile);
       areastream.open(areafile);
@@ -87,8 +87,9 @@ public:
     void way(const osmium::Way& way) {
         const osmium::TagList& tags = way.tags();
         if (osmium::tags::match_any_of(tags, m_way_filter)) {
-            if (tags.has_key("natural") && 0 == strcmp("coastline", tags.get_value_by_key("natural"))) {
-              // special deal: put coastline into area stream to avoid collisions at 1st pass
+            if (tags.has_tag("natural", "coastline")) {
+              // special deal: put coastline into area stream 
+              // to avoid collisions later at 1st pass of RunRiverSystems
               output_waterway(way, areastream);
             } else {
               output_waterway(way, waystream);
@@ -108,11 +109,9 @@ public:
         if (p.first == osmium::osm_entity_bits::way) {
             std::cout << "adding way filter rule " << p.second << std::endl;
             m_way_filter.add_rule(true, get_tag_matcher(p.second));
-            m_tags_filter.add_rule(true, get_tag_matcher(p.second));
         } else if (p.first == osmium::osm_entity_bits::area) {
             std::cout << "adding area filter rule " << p.second << std::endl;
             m_area_filter.add_rule(true, get_tag_matcher(p.second));
-            m_tags_filter.add_rule(true, get_tag_matcher(p.second));
         }
     }
 
@@ -138,14 +137,13 @@ public:
         }
     }
 
-    const osmium::TagsFilter & getTagsFilter() {
-        return m_tags_filter;
+    const osmium::TagsFilter & getAreaFilter() {
+        return m_area_filter;
     }
 
 private:
     std::ofstream waystream;
     std::ofstream areastream;
-    osmium::TagsFilter m_tags_filter;
     osmium::TagsFilter m_way_filter;
     osmium::TagsFilter m_area_filter;
 
@@ -176,7 +174,7 @@ int main(int argc, char* argv[]) {
         // relations and member ways needed for each area. It then calls an
         // instance of the osmium::area::Assembler class (with the given config)
         // to actually assemble one area.
-        osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config, data_handler.getTagsFilter()};
+        osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config, data_handler.getAreaFilter()};
 
         // We read the input file twice. In the first pass, only relations are
         // read and fed into the multipolygon manager.
